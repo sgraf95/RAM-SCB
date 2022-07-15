@@ -1,0 +1,9 @@
+use brew (local install LANL)
+ar fix: brew install binutils 
+ export LDFLAGS="-L/Users/sgraf/local/homebrew/opt/binutils/lib"
+ export CPPFLAGS="-I/Users/sgraf/local/homebrew/opt/binutils/include"
+ 
+export PATH="/Users/sgraf/local/homebrew/opt/binutils/bin:$PATH"  
+
+mpif90 -o /Users/sgraf/Desktop/RAM-SCB/src/ram_scb.exe Main.o libAll.a  -frecord-marker=4 -fdefault-real-8 -fdefault-double-8 -fall-intrinsics -finit-local-zero  -fopenmp -lstdc++  -L//Users/sgraf/local/homebrew/Cellar/netcdf/4.8.1_2/lib -L/Users/sgraf/local/homebrew/Cellar/gsl/2.7.1/lib -lgsl -lgslcblas -lnetcdf -lnetcdff
+
