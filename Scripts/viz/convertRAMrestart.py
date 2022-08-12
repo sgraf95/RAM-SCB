@@ -325,20 +325,16 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
         celldata = lxml.etree.Element('CellData')
         piece.append(celldata)
 
-        #Now we add the actual point locations
-        points = lxml.etree.Element('Points') #points needs a "DataArray" element with the point locations
-        xyzlocations = lxml.etree.Element('DataArray', type='Float64', NumberOfComponents='3', format='ascii')
-        #theta_list = np.arange(np.pi, (3*np.pi) + (2*np.pi/(nT-1)), 2*np.pi/(nT-1))
+        # Create point locations
         theta_list = [np.pi+np.deg2rad(15*idx*24.0/nT) for idx in range(nT)]
         step = (6.75 - 1.75)/nR
         r_list = np.arange(1.75 + step, 6.75 + step, step)
-        to_write = '\n'
+
+        points = np.zeros([npts,3])
         for i in range(npts):
             r = r_list[i%nR]; theta = theta_list[i//nR]
-            to_write += '\t\t\t\t\t' + str(r*np.cos(theta)) + '  ' + str(r*np.sin(theta)) + '  0.00\n'
-        xyzlocations.text = to_write
-        points.append(xyzlocations)
-        piece.append(points)
+            points[i,0] = r*np.cos(theta)
+            points[i,1] = r*np.sin(theta)
 
         #PolyData requires other elements: Verts, Lines, Strips, Polys. These can mostly be empty.
         verts = lxml.etree.Element('Verts')
@@ -430,8 +426,8 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
         outdir = 'vtk_files'
         if not os.path.isdir(outdir):
             os.mkdir(outdir)
-        with open(os.path.join(outdir, outfn + '_field.vtu'), 'w') as fh:
-            fh.write(out)
+        grid.save(os.path.join(outdir, outfn + '_field.vtu'))
+
 #=================================================================================================
 if __name__ == '__main__':
     if len(sys.argv) != 2:
