@@ -4,11 +4,13 @@
    Input: directory containing .nc files'''
 
 import os, sys, itertools, glob
+from lxml import etree
 import lxml.etree
 import numpy as np
 import spacepy.datamodel as dm
 import netCDF4
 from makeCustomSource import getPolyVertOrder, getCellVertOrder
+import pyvista as pv
 
 #========================================================================================================
 def fromNC4(fname):
@@ -270,8 +272,8 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
 
     if pressure:
         nT = data['nT'][0]-1 #RAM uses a ghost point in local time
-        nR = data['nR'][0]
-        nS = data['nS'][0]
+        nR = data['nR'][0] # radial distance
+        nS = data['nS'][0] # species
         rnT = range(nT)
         rnR = range(nR)
         npts = nT*nR
@@ -279,51 +281,8 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
 
         #-----------------------Generating fn_pressure.vtp----------------------------------
         #Set up XML tree structure
-        fulltree = lxml.etree.ElementTree(lxml.etree.Element('VTKFile', type='PolyData', version='1.0', byte_order='LittleEndian'))
-        parent = fulltree.getroot()
-        RAMdata = lxml.etree.Element('PolyData')
-        parent.append(RAMdata)
-        piece = lxml.etree.Element('Piece', NumberOfPoints='{}'.format(npts), NumberOfVerts='1', NumberOfLines='0', NumberOfStrips='0', NumberOfPolys='0')
-        RAMdata.append(piece)
-        pointdata = lxml.etree.Element('PointData', Scalars='proton pressure')
-        piece.append(pointdata)
-        epress  = lxml.etree.Element('DataArray', type='Float64', Name='electron pressure', NumberOfComponents='1', format='ascii')
-        hpress  = lxml.etree.Element('DataArray', type='Float64', Name='proton pressure', NumberOfComponents='1', format='ascii')
-        hepress = lxml.etree.Element('DataArray', type='Float64', Name='heliumion pressure', NumberOfComponents='1', format='ascii')
-        opress  = lxml.etree.Element('DataArray', type='Float64', Name='oxygenion pressure', NumberOfComponents='1', format='ascii')
-        anisot  = lxml.etree.Element('DataArray', type='Float64', Name='pressure anisotropy', NumberOfComponents='1', format='ascii')
-        #write data to XML tree
-        to_write = '\n'
-        for i, j in itertools.product(rnT,rnR):
-            to_write +=  '\t\t\t\t\t' + str(par_data[i,j,0] + 2*per_data[i,j,0]) + '\n'
-        epress.text = to_write
-        to_write = '\n'
-        for i, j in itertools.product(rnT,rnR):
-            to_write +=  '\t\t\t\t\t' + str(par_data[i,j,1] + 2*per_data[i,j,1]) + '\n'
-        hpress.text = to_write
-        to_write = '\n'
-        for i, j in itertools.product(rnT,rnR):
-            to_write +=  '\t\t\t\t\t' + str(par_data[i,j,2] + 2*per_data[i,j,2]) + '\n'
-        hepress.text = to_write
-        to_write = '\n'
-        for i, j in itertools.product(rnT,rnR):
-            to_write +=  '\t\t\t\t\t' + str(par_data[i,j,3] + 2*per_data[i,j,3]) + '\n'
-        opress.text = to_write
-        for el in [epress, hpress, hepress, opress]:
-            pointdata.append(el)
-        to_write = '\n'
-        for i, j in itertools.product(rnT,rnR):
-            para = par_data[i,j,0] + par_data[i,j,1] + par_data[i,j,2] + par_data[i,j,3]
-            perp = per_data[i,j,0] + per_data[i,j,1] + per_data[i,j,2] + per_data[i,j,3]
-            if para==0 and perp==0:
-                to_write +=  '\t\t\t\t\t-99.0\n'
-            else:
-                to_write +=  '\t\t\t\t\t' + str(para/perp) + '\n'
-        anisot.text = to_write
-        for el in [epress, hpress, hepress, opress, anisot]:
-            pointdata.append(el)
-        celldata = lxml.etree.Element('CellData')
-        piece.append(celldata)
+
+        # pointdata = lxml.etree.Element('PointData', Scalars='proton pressure') # seting proton pressure as default to open
 
         # Create point locations
         theta_list = [np.pi+np.deg2rad(15*idx*24.0/nT) for idx in range(nT)]
@@ -336,49 +295,44 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
             points[i,0] = r*np.cos(theta)
             points[i,1] = r*np.sin(theta)
 
-        #PolyData requires other elements: Verts, Lines, Strips, Polys. These can mostly be empty.
-        verts = lxml.etree.Element('Verts')
-        verts_c = lxml.etree.Element('DataArray', type='Int64', Name='connectivity', RangeMax='{}'.format(npts-1), RangeMin='0')
-        verts_o = lxml.etree.Element('DataArray', type='Int64', Name='offsets', RangeMin='{}'.format(npts), RangeMax='{}'.format(npts))
-        vertnums = ['{}'.format(i) for i in range(npts)]
-        for i in range(npts//8)[::-1]:
-            vertnums.insert((i+1)*8, indent3)
-        verts_c.text = indent3 + ' ' + ' '.join(vertnums) + indent2
-        verts_o.text = indent3+ '{}'.format(npts) + indent2
-        verts.append(verts_c)
-        verts.append(verts_o)
-        piece.append(verts)
-        for partname in ['Lines', 'Strips', 'Polys']:
-            dac = lxml.etree.Element('DataArray', type='Int64', Name='connectivity', RangeMax='{}'.format(npts), RangeMin='0')
-            dao = lxml.etree.Element('DataArray', type='Int64', Name='offsets', RangeMin='{}'.format(0), RangeMax='{}'.format(npts))
-            if partname == 'Polys':
-                #write the polygons that connect the points together, defining the grid
-                polyconn = getPolyVertOrder(npts, nT, nR)
-                nconn = len(polyconn)
-                npolys = nT*(nR-1)
-                for i in range(nconn//4)[::-1]:
-                    polyconn.insert((i+1)*4, indent3)
-                connstr = ' ' + ' '.join(polyconn)
-                #offsets are 4, 8, 12, ...
-                polyoffset = ['{}'.format(4*(n+1)) for n in range(nconn//4)]
-                for i in range(nconn//4)[::-1]:
-                    polyoffset.insert((i+1)*4, indent3)
-                offstr = ' ' + ' '.join(polyoffset)
-                dac.text = indent3 + connstr.rstrip() + indent2
-                dao.text = indent3 + offstr.rstrip() + indent2
-                dao.set('RangeMax', '{}'.format(nconn))
-                piece.set('NumberOfPolys', '{}'.format(npolys))
-            part = lxml.etree.Element(partname)
-            part.append(dac)
-            part.append(dao)
-            piece.append(part)
+        polyconn = getPolyVertOrder(npts, nT, nR)
+        for i in range(len(polyconn)//4)[::-1]:
+            polyconn.insert(i*4, '4')
+        polyconn = list(map(int,polyconn))
+        polyconn = np.reshape(polyconn, (len(polyconn)//5,5))
 
-        out = lxml.etree.tostring(fulltree, xml_declaration=False, pretty_print=True).decode()
+        disc = pv.PolyData(points, polyconn)
+
+        epress = np.zeros(npts)
+        hpress = np.zeros(npts)
+        hepress = np.zeros(npts)
+        opress = np.zeros(npts)
+        anisot = np.zeros(npts)
+
+        for idx, locs in enumerate(itertools.product(rnT,rnR)):
+            i,j = locs
+            epress[idx] = par_data[i,j,0] + 2*per_data[i,j,0]
+            hpress[idx] = par_data[i,j,1] + 2*per_data[i,j,1]
+            hepress[idx] = par_data[i,j,2] + 2*per_data[i,j,2]
+            opress[idx] = par_data[i,j,3] + 2*per_data[i,j,3]
+
+            para = par_data[i,j,0] + par_data[i,j,1] + par_data[i,j,2] + par_data[i,j,3]
+            perp = per_data[i,j,0] + per_data[i,j,1] + per_data[i,j,2] + per_data[i,j,3]
+            if para==0 and perp==0:
+                anisot[idx] = -99.0
+            else:
+                anisot[idx] = para/perp
+        disc['electron pressure'] = epress
+        disc['proton pressure'] = hpress
+        disc['heliumion pressure'] = hepress
+        disc['oygenion pressure'] = opress
+        disc['pressure anisotropy'] = anisot
+
         outdir = 'vtk_files'
         if not os.path.isdir(outdir):
             os.mkdir(outdir)
-        with open(os.path.join(outdir, outfn + '_pressure.vtp'), 'w') as fh:
-            fh.write(out)
+
+        disc.save(os.path.join(outdir, outfn + '_pressure_vtk.vtp'))
 
     if field:
         #-----------------------Generating fn_field.vtu----------------------------------
@@ -390,6 +344,7 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
         rnPsi = range(nPsi)
         rnTheta = range(nTheta)
 
+        # is tolist necessary 
         Bx = data['Bx'].tolist()
         By = data['By'].tolist()
         Bz = data['Bz'].tolist()
@@ -408,16 +363,19 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
             points[idx,1] = y[locs[0]][locs[1]][locs[2]]
             points[idx,2] = z[locs[0]][locs[1]][locs[2]]
         
-        connarr = getCellVertOrder(npts, nZeta, nPsi, nTheta, wrap=True)
-        nconn = len(connarr)
-        offset = [8*(n+1) for n in range(nconn//8)]
-        cell_type = ['12']*(nconn//8)
+        cells = getCellVertOrder(npts, nZeta, nPsi, nTheta, wrap=True, pad=True)
+        nconn = len(cells)
+        cells = list(map(int,cells))
+        cells = np.reshape(cells, (len(cells)//9,9))
+        offset = np.array([8*(n+1) for n in range(nconn//8)]) # start of list for each cell
+        cell_type = np.repeat(12,nconn//9)
 
         grid = pv.UnstructuredGrid(offset, cells, cell_type, points)
 
         # add in B field data
         B = np.zeros([npts,3])
-        for i, j, k in itertools.product(rnZeta, rnPsi, rnTheta):
+        for idx, locs in enumerate(itertools.product(rnZeta, rnPsi, rnTheta)):
+                i, j, k = locs
                 B[idx,0] = Bx[i][j][k]
                 B[idx,1] = By[i][j][k]
                 B[idx,2] = Bz[i][j][k]
@@ -426,7 +384,7 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
         outdir = 'vtk_files'
         if not os.path.isdir(outdir):
             os.mkdir(outdir)
-        grid.save(os.path.join(outdir, outfn + '_field.vtu'))
+        grid.save(os.path.join(outdir, outfn + '_field_vtk.vtu'))
 
 #=================================================================================================
 if __name__ == '__main__':
@@ -441,8 +399,10 @@ if __name__ == '__main__':
         for item in files:
             print(item)
             gen_vtx(item)
+            gen_vtx_vtk(item)
     else:
         grp = properties['Movie']
         for item in files:
             if item[:len(grp)] == grp:
                 gen_vtx(item)
+                gen_vtx_vtk(item)

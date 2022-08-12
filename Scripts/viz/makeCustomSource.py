@@ -27,17 +27,24 @@ def gen_sphere():
         fh.write(to_write)
 
 def gen_vtk_sphere():
+    ''' Generates spherical source using pyvista'''
     xyz, nLons, nLats = pointsGenSphere(r=1.5, minL=3.0, maxL=7.0, dL=0.25)
-    point_cloud = pv.PolyData(xyz)
+    polyconn = getPolyVertOrder(len(xyz), nLons, nLats)
+    for i in range(len(polyconn)//4)[::-1]:
+        polyconn.insert(i*4, '4')
+    polyconn = list(map(int,polyconn))
+    polyconn = np.reshape(polyconn, (len(polyconn)//5,5))
+    point_cloud = pv.PolyData(xyz, polyconn)
     point_cloud.save('./vtk_files/vtksphere.vtk')
 
 def gen_vtk_disc():
+    ''' Generates disc source using pyvista'''
     xyz, nLons, nL = pointsGenDisc(minL=2.5, maxL=8.5, dL=0.5)
     point_cloud = pv.PolyData(xyz)
     point_cloud.save('./vtk_files/vtkdisc.vtk') 
-    
+
 def gen_vtk_disc_from_source():
-    # mimic same calling syntax
+    ''' Generates spherical source using vtk source object'''
     disc = vtk.vtkDiskSource()
     disc.SetInnerRadius(2.5)
     disc.SetOuterRadius(8.5)
@@ -189,7 +196,7 @@ def getPolyVertOrder(ncoords, dim1, dim2):
     flat_cells = [str(item) for sublist in cells for item in sublist]
     return flat_cells
 
-def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False):
+def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False, pad=False):
     #order is (Lon1, L1, lat1), (Lon1, L1, Lat2), ...
     cells = []
     if wrap:
@@ -216,7 +223,10 @@ def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False):
             fvert2[idx2,idx3] = vert6
             fvert3[idx2,idx3] = vert7
             fvert4[idx2,idx3] = vert8
-        cells.append([vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
+        if pad == True:
+            cells.append([8, vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
+        else:
+            cells.append([vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
     #add cells that wrap in Longitude
     if wrap:
         wrap_counter = 0
@@ -229,7 +239,10 @@ def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False):
             vert6 = ivert2[idx2,idx3]
             vert7 = ivert3[idx2,idx3]
             vert8 = ivert4[idx2,idx3]
-            cells.append([vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
+            if pad == True:
+                cells.append([8, vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
+            else:
+                cells.append([vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
             wrap_counter += 1
         if verbose: print('Adding {} cells at the wraparound'.format(wrap_counter))
     flat_cells = [str(item) for sublist in cells for item in sublist]
