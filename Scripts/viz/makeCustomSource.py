@@ -9,6 +9,8 @@ import os, sys, itertools, io
 import lxml.etree
 import numpy as np
 import spacepy.datamodel as dm
+import vtk
+import pyvista as pv
 
 #=================================================================================================
 def gen_sphere():
@@ -23,6 +25,31 @@ def gen_sphere():
         os.mkdir(outdir)
     with open(os.path.join(outdir, 'sphere.vtp'), 'wb') as fh:
         fh.write(to_write)
+
+def gen_vtk_sphere():
+    xyz, nLons, nLats = pointsGenSphere(r=1.5, minL=3.0, maxL=7.0, dL=0.25)
+    point_cloud = pv.PolyData(xyz)
+    point_cloud.save('./vtk_files/vtksphere.vtk')
+
+def gen_vtk_disc():
+    xyz, nLons, nL = pointsGenDisc(minL=2.5, maxL=8.5, dL=0.5)
+    point_cloud = pv.PolyData(xyz)
+    point_cloud.save('./vtk_files/vtkdisc.vtk') 
+    
+def gen_vtk_disc_from_source():
+    # mimic same calling syntax
+    disc = vtk.vtkDiskSource()
+    disc.SetInnerRadius(2.5)
+    disc.SetOuterRadius(8.5)
+    disc.SetRadialResolution(10)
+    disc.SetCircumferentialResolution(36)
+    disc.Update()
+
+    outdir = 'vtk_files'
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetInputData(disc.GetOutput())
+    writer.SetFileName('vtkdisc_source.vtk')
+    writer.Update()
 
 
 def gen_disc():
@@ -43,7 +70,7 @@ def pointsGenSphere(r=1.1, minL=2.0, maxL=7.0, dL=0.25):
     '''generates Cartesian coordinates for points on a spherical surface given extent/resolution'''
     points = []
     Ls = np.arange(minL, maxL, dL)
-    Lats = np.arccos(np.sqrt(1./Ls)) #N.Hem latitudes in radians
+    Lats = np.arccos(np.sqrt(1./Ls)) #N.Hem latitudes in radians #converts dipole L to latitude
     #Lats = np.concatenate([-1*Lats[::-1], Lats]) #add S.Hem
     Colats = (np.pi/2.)-Lats #Colatitudes in radians
     Lons = np.deg2rad(np.arange(0,360,15))
@@ -53,6 +80,7 @@ def pointsGenSphere(r=1.1, minL=2.0, maxL=7.0, dL=0.25):
         xyz[idx,0] = r*np.cos(LonLat[0])*np.sin(LonLat[1])
         xyz[idx,1] = r*np.sin(LonLat[0])*np.sin(LonLat[1])
         xyz[idx,2] = r*np.cos(LonLat[1])
+    print(len(Lons))
     return xyz, len(Lons), len(Lats)
 
 
@@ -75,7 +103,6 @@ def pointsGenDisc(minL=2.0, maxL=7.0, dL=0.25):
 def xmlPolyGen(xyz, dim1, dim2):
     '''writes Cartesian coordinates of 2D surface to VTK PolyData XML, including connectivity'''
     npts = len(xyz)
-
     #convenience handles
     indent3 = '\n\t\t\t'
     indent2 = '\n\t\t'
@@ -210,5 +237,7 @@ def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False):
 
 #=================================================================================================
 if __name__ == '__main__':
-    gen_sphere() #generates sphere.vtp in vtk_files directory
-    gen_disc()
+    gen_vtk_sphere()
+    gen_vtk_disc()
+    #gen_sphere() #generates sphere.vtp in vtk_files directory
+    #gen_disc()
