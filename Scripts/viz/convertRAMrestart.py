@@ -295,10 +295,7 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
             points[i,0] = r*np.cos(theta)
             points[i,1] = r*np.sin(theta)
 
-        polyconn = getPolyVertOrder(npts, nT, nR)
-        for i in range(len(polyconn)//4)[::-1]:
-            polyconn.insert(i*4, '4')
-        polyconn = list(map(int,polyconn))
+        polyconn = getPolyVertOrder(npts, nT, nR, pad=True)
         polyconn = np.reshape(polyconn, (len(polyconn)//5,5))
 
         disc = pv.PolyData(points, polyconn)
@@ -365,7 +362,6 @@ def gen_vtx_vtk(fileName, pressure=True, field=True, verbose=False):
         
         cells = getCellVertOrder(npts, nZeta, nPsi, nTheta, wrap=True, pad=True)
         nconn = len(cells)
-        cells = list(map(int,cells))
         cells = np.reshape(cells, (len(cells)//9,9))
         offset = np.array([8*(n+1) for n in range(nconn//8)]) # start of list for each cell
         cell_type = np.repeat(12,nconn//9)

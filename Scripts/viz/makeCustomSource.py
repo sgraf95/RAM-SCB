@@ -19,6 +19,7 @@ def gen_sphere():
     xyz, nLons, nLats = pointsGenSphere(r=1.5, minL=3.0, maxL=7.0, dL=0.25)
 
     #----------------------------generate the sphere.vtp file--------------------------
+    print('hi')
     to_write = xmlPolyGen(xyz, dim1=nLons, dim2=nLats)
     outdir = 'vtk_files'
     if not os.path.isdir(outdir):
@@ -29,13 +30,12 @@ def gen_sphere():
 def gen_vtk_sphere():
     ''' Generates spherical source using pyvista'''
     xyz, nLons, nLats = pointsGenSphere(r=1.5, minL=3.0, maxL=7.0, dL=0.25)
-    polyconn = getPolyVertOrder(len(xyz), nLons, nLats)
-    for i in range(len(polyconn)//4)[::-1]:
-        polyconn.insert(i*4, '4')
-    polyconn = list(map(int,polyconn))
+    polyconn = getPolyVertOrder(len(xyz), nLons, nLats,pad=True)
+    print(len(polyconn)//5,'polyvtk')
     polyconn = np.reshape(polyconn, (len(polyconn)//5,5))
-    point_cloud = pv.PolyData(xyz, polyconn)
-    point_cloud.save('./vtk_files/vtksphere.vtk')
+    point_cloud = pv.PolyData(xyz, faces=polyconn)
+    print('verts', point_cloud.n_verts)
+    point_cloud.save('./vtk_files/vtksphere.vtk',binary=False)
 
 def gen_vtk_disc():
     ''' Generates disc source using pyvista'''
@@ -113,7 +113,7 @@ def xmlPolyGen(xyz, dim1, dim2):
     #convenience handles
     indent3 = '\n\t\t\t'
     indent2 = '\n\t\t'
-
+    print('polygen')
     #Set up element tree for XML
     fulltree = lxml.etree.ElementTree(lxml.etree.Element('VTKFile', type='PolyData', version='1.0', byte_order='LittleEndian'))
     parent = fulltree.getroot()
@@ -146,6 +146,7 @@ def xmlPolyGen(xyz, dim1, dim2):
     verts.append(verts_c)
     verts.append(verts_o)
     piece.append(verts)
+    print(npts)
     for partname in ['Lines', 'Strips', 'Polys']:
         dac = lxml.etree.Element('DataArray', type='Int64', Name='connectivity', RangeMax='{}'.format(npts), RangeMin='0')
         dao = lxml.etree.Element('DataArray', type='Int64', Name='offsets', RangeMin='{}'.format(0), RangeMax='{}'.format(npts))
@@ -175,7 +176,7 @@ def xmlPolyGen(xyz, dim1, dim2):
     out = lxml.etree.tostring(fulltree, xml_declaration=False, pretty_print=True)
     return out
 
-def getPolyVertOrder(ncoords, dim1, dim2):
+def getPolyVertOrder(ncoords, dim1, dim2, pad=False):
     # x, y, z are calculated using itertools.product
     # given (for disc) Lon, L, the loop order is all L for each Lon, iterating over Lon
     # i.e. (Lon1, L1), (Lon1, L2), (Lon1, L3), ..., (Lon2, L1), (Lon2, L2), ...
@@ -185,15 +186,24 @@ def getPolyVertOrder(ncoords, dim1, dim2):
         vert2 = vert1+1
         vert3 = (idx1+1)*dim2+idx2+1
         vert4 = (idx1+1)*dim2+idx2
-        cells.append([vert1, vert2, vert3, vert4])
+        if pad == True:
+            cells.append([4, vert1, vert2, vert3, vert4])
+        else:
+            cells.append([vert1, vert2, vert3, vert4])
     #add cells that wrap in Longitude
     for idx in range(dim2-1):
         vert1 = idx
         vert2 = idx+1
         vert3 = ncoords-dim2+idx+1
         vert4 = ncoords-dim2+idx
-        cells.append([vert1, vert2, vert3, vert4])
-    flat_cells = [str(item) for sublist in cells for item in sublist]
+        if pad == True:
+            cells.append([4, vert1, vert2, vert3, vert4])
+        else:
+            cells.append([vert1, vert2, vert3, vert4])
+    if pad == True:
+        flat_cells = [item for sublist in cells for item in sublist]
+    else:
+        flat_cells = [str(item) for sublist in cells for item in sublist]
     return flat_cells
 
 def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False, pad=False):
@@ -245,12 +255,15 @@ def getCellVertOrder(ncoords, dim1, dim2, dim3, wrap=False, verbose=False, pad=F
                 cells.append([vert1, vert2, vert3, vert4, vert5, vert6, vert7, vert8])
             wrap_counter += 1
         if verbose: print('Adding {} cells at the wraparound'.format(wrap_counter))
-    flat_cells = [str(item) for sublist in cells for item in sublist]
+    if pad == True:
+        flat_cells = [item for sublist in cells for item in sublist]
+    else:
+        flat_cells = [str(item) for sublist in cells for item in sublist]
     return flat_cells
 
 #=================================================================================================
 if __name__ == '__main__':
     gen_vtk_sphere()
     gen_vtk_disc()
-    #gen_sphere() #generates sphere.vtp in vtk_files directory
+    gen_sphere() #generates sphere.vtp in vtk_files directory
     #gen_disc()
